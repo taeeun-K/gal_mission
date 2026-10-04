@@ -1,0 +1,739 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="로우데이터를 data02 형식으로 변환하고 미참여자 이메일을 추출합니다.">
+  <title>콘텐츠 제출 데이터 정리</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #19243b;
+      --muted: #6b7890;
+      --line: #e3e9f2;
+      --panel: #fff;
+      --canvas: #f4f7fb;
+      --blue: #3457d5;
+      --blue-dark: #2746bb;
+      --blue-soft: #edf1ff;
+      --green: #147a51;
+      --green-soft: #e8f7f0;
+      --amber: #8a5b08;
+      --amber-soft: #fff5dd;
+      --red: #b33c49;
+      --shadow: 0 12px 34px rgba(34, 54, 91, .07);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--canvas);
+      font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+      line-height: 1.55;
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    .page { width: min(1080px, calc(100% - 40px)); margin: 0 auto; padding: 44px 0 64px; }
+    .eyebrow { color: var(--blue); font-size: 12px; font-weight: 800; letter-spacing: .11em; }
+    h1 { margin: 9px 0 8px; font-size: clamp(28px, 5vw, 38px); line-height: 1.2; letter-spacing: -.045em; }
+    .intro { margin: 0; max-width: 720px; color: var(--muted); font-size: 15px; }
+    .privacy {
+      display: flex; gap: 10px; align-items: flex-start; margin: 22px 0 26px; padding: 14px 16px;
+      border: 1px solid #d7e7de; border-radius: 12px; background: #f1faf5; color: #315d49; font-size: 13px;
+    }
+    .privacy strong { white-space: nowrap; }
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+    .step { min-height: 164px; padding: 20px; }
+    .step-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 13px; }
+    .step-number {
+      display: grid; place-items: center; width: 28px; height: 28px; border-radius: 9px;
+      background: var(--blue-soft); color: var(--blue); font-size: 13px; font-weight: 800;
+    }
+    h2 { margin: 0; font-size: 16px; letter-spacing: -.02em; }
+    .step p { min-height: 40px; margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+    .file-button, .button {
+      display: inline-flex; justify-content: center; align-items: center; gap: 7px;
+      min-height: 40px; padding: 9px 13px; border: 1px solid var(--line); border-radius: 9px;
+      background: #fff; color: var(--ink); font-size: 13px; font-weight: 700; transition: .15s ease;
+    }
+    .file-button:hover, .button:hover { border-color: #bcc9e2; background: #f9faff; }
+    .button.primary { border-color: var(--blue); background: var(--blue); color: white; }
+    .button.primary:hover { background: var(--blue-dark); }
+    .button:disabled { cursor: not-allowed; opacity: .45; }
+    .file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+    .file-name { min-height: 18px; margin-top: 7px; overflow-wrap: anywhere; color: var(--muted); font-size: 11px; }
+    .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; margin-top: 20px; }
+    .main-panel, .side-panel { padding: 22px; }
+    .panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
+    .panel-head p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+    .panel-title { font-size: 18px; }
+    .round-field { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .round-field input {
+      width: 92px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink);
+    }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0 0 16px; }
+    .stat { padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: #fbfcff; }
+    .stat-label { color: var(--muted); font-size: 11px; }
+    .stat-value { margin-top: 4px; font-size: 23px; font-weight: 800; line-height: 1.1; letter-spacing: -.04em; }
+    .stat-value.small { font-size: 17px; }
+    .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+    .data-grid { max-height: 560px; }
+    .data-grid table { min-width: 900px; }
+    .missing-grid { max-height: 460px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { padding: 10px 11px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+    th { position: sticky; top: 0; z-index: 1; background: #f7f9fd; color: #55627a; font-weight: 700; }
+    tbody tr:last-child td { border-bottom: 0; }
+    #preview tr[data-sns-url] { cursor: pointer; }
+    #preview tr[data-sns-url]:hover td { background: #f4f7ff; }
+    #preview tr.is-active td { background: #eaf0ff; }
+    #preview tr.is-active td.url a { color: #203da9; font-weight: 700; }
+    #preview tr[data-sns-url]:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+    td.url { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+    td.url a { display: block; overflow: hidden; color: var(--blue); text-overflow: ellipsis; }
+    td.url a:hover { text-decoration-thickness: 2px; }
+    .viewer[hidden] { display: none; }
+    .viewer { position: fixed; inset: 0; z-index: 20; }
+    .viewer-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: rgba(17, 27, 48, .42); }
+    .viewer-panel {
+      position: absolute; top: 0; right: 0; display: flex; flex-direction: column;
+      width: min(700px, 100vw); height: 100%; background: var(--panel);
+      box-shadow: -12px 0 36px rgba(20, 34, 61, .18);
+    }
+    .viewer-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+    .viewer-title { min-width: 0; overflow: hidden; font-size: 15px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+    .viewer-actions { display: flex; flex-shrink: 0; align-items: center; gap: 8px; }
+    .viewer-open-link { color: var(--blue); font-size: 12px; font-weight: 700; }
+    .viewer-close { width: 36px; min-height: 36px; padding: 4px; font-size: 19px; }
+    .viewer-note { margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+    .viewer-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: #fff; }
+    body.viewer-open { overflow: hidden; }
+    .empty { padding: 22px 12px; color: var(--muted); text-align: center; font-size: 12px; }
+    .table-note { margin: 9px 0 0; color: var(--muted); font-size: 11px; }
+    .download-list { display: grid; gap: 8px; margin-top: 13px; }
+    .download-list .button { width: 100%; justify-content: flex-start; }
+    .download-caption { margin: 0; color: var(--muted); font-size: 12px; }
+    .divider { height: 1px; margin: 20px 0; background: var(--line); }
+    .side-panel .panel-head { margin-bottom: 13px; }
+    .missing-count { display: flex; align-items: baseline; gap: 7px; margin: 5px 0 12px; }
+    .missing-count strong { font-size: 30px; letter-spacing: -.05em; }
+    .missing-count span { color: var(--muted); font-size: 12px; }
+    .badge { padding: 4px 8px; border-radius: 20px; background: var(--amber-soft); color: var(--amber); font-size: 10px; font-weight: 700; }
+    .badge.ok { background: var(--green-soft); color: var(--green); }
+    .side-note { margin: 0; color: var(--muted); font-size: 12px; }
+    .alert { display: none; margin: 16px 0 0; padding: 12px 14px; border: 1px solid #f0d9a2; border-radius: 10px; background: var(--amber-soft); color: #765313; font-size: 12px; }
+    .alert.error { border-color: #f1c7cc; background: #fff0f1; color: var(--red); }
+    .alert.show { display: block; }
+    .footnote { margin: 17px 2px 0; color: var(--muted); font-size: 11px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    @media (max-width: 800px) {
+      .steps { grid-template-columns: 1fr; }
+      .step { min-height: auto; }
+      .step p { min-height: auto; }
+      .workspace { grid-template-columns: 1fr; }
+      .side-panel { order: -1; }
+    }
+    @media (max-width: 520px) {
+      .page { width: min(100% - 24px, 1080px); padding-top: 28px; }
+      .privacy { display: block; }
+      .privacy strong { display: block; margin-bottom: 3px; }
+      .main-panel, .side-panel { padding: 16px; }
+      .panel-head { display: block; }
+      .round-field { margin-top: 12px; }
+      .stats { gap: 7px; }
+      .stat { padding: 10px 8px; }
+      .stat-value { font-size: 19px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div class="eyebrow">LOCAL DATA WORKSPACE</div>
+      <h1>콘텐츠 제출 데이터 정리</h1>
+      <p class="intro">로우데이터를 data02 표로 정리하고, 참여자 정보와 대조해 미참여자 이메일을 추출합니다.</p>
+    </header>
+
+    <div class="privacy">
+      <strong>개인정보 보호</strong>
+      <span>선택한 파일은 이 브라우저 안에서만 처리됩니다. 업로드 서버나 별도 저장소로 전송하지 않습니다. 엑셀 기능은 최초 접속 시 라이브러리를 불러오기 위해 인터넷 연결이 필요합니다.</span>
+    </div>
+
+    <section class="steps" aria-label="파일 선택">
+      <article class="card step">
+        <div class="step-heading"><span class="step-number">1</span><h2>로우데이터</h2></div>
+        <p>참여 응답 원본 CSV 또는 Excel 파일을 선택하세요.</p>
+        <label class="file-button" for="low-file">파일 선택</label>
+        <input class="file-input" id="low-file" type="file" accept=".csv,.xlsx,.xls">
+        <div class="file-name" id="low-name">선택된 파일 없음</div>
+      </article>
+      <article class="card step">
+        <div class="step-heading"><span class="step-number">2</span><h2>참여자 정보</h2></div>
+        <p>info 파일 또는 전체 DB를 선택하세요. 이름·이메일 열과 제목 행을 자동으로 찾습니다.</p>
+        <label class="file-button" for="info-file">파일 선택</label>
+        <input class="file-input" id="info-file" type="file" accept=".csv,.xlsx,.xls">
+        <div class="file-name" id="info-name">선택된 파일 없음</div>
+      </article>
+      <article class="card step">
+        <div class="step-heading"><span class="step-number">3</span><h2>기존 data02 (선택)</h2></div>
+        <p>미참여자 대조에 사용할 기존 data02가 있으면 선택하세요.</p>
+        <label class="file-button" for="data-file">파일 선택</label>
+        <input class="file-input" id="data-file" type="file" accept=".csv,.xlsx,.xls">
+        <div class="file-name" id="data-name">선택된 파일 없음</div>
+      </article>
+    </section>
+
+    <div class="alert" id="message" role="status" aria-live="polite"></div>
+
+    <section class="workspace">
+      <article class="card main-panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">data02 전체 데이터</h2>
+            <p>정리된 전체 콘텐츠를 표에서 확인합니다.</p>
+          </div>
+          <label class="round-field" for="round-input">차수 기본값
+            <input id="round-input" type="text" placeholder="예: 1차" maxlength="30">
+          </label>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="stat-label">정리된 콘텐츠</div><div class="stat-value" id="row-count">—</div></div>
+          <div class="stat"><div class="stat-label">원본 응답</div><div class="stat-value" id="source-count">—</div></div>
+          <div class="stat"><div class="stat-label">확인 필요</div><div class="stat-value small" id="warning-count">—</div></div>
+        </div>
+        <div class="table-wrap data-grid">
+          <table>
+            <thead><tr><th>No.</th><th>이름</th><th>차수</th><th>갤캠스 URL</th><th>업로드 채널</th><th>SNS URL</th><th>우수 콘텐츠</th><th>인게이지먼트</th><th>비고</th><th>특이사항</th></tr></thead>
+            <tbody id="preview">
+              <tr><td colspan="10" class="empty">로우데이터 파일을 선택하면 결과가 표시됩니다.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="table-note">전체 행과 열을 확인하려면 표 안에서 스크롤하세요. URL이 없는 콘텐츠 항목은 제외되며, 채널과 URL이 짝이 맞지 않는 응답은 확인 필요로 표시됩니다.</p>
+        <div class="divider"></div>
+        <p class="download-caption">자동으로 채울 수 없는 우수 콘텐츠·인게이지먼트·비고·특이사항은 빈칸으로 내보냅니다.</p>
+        <div class="download-list">
+          <button class="button primary" id="download-xlsx" disabled>data02 엑셀 (.xlsx) 다운로드</button>
+          <button class="button" id="download-csv" disabled>data02 CSV 다운로드</button>
+        </div>
+      </article>
+
+      <aside class="card side-panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">미참여자 이메일</h2>
+            <p>참여자 정보의 이름과 data02 이름을 대조합니다.</p>
+          </div>
+        </div>
+        <div class="missing-count"><strong id="missing-count">—</strong><span>명 미참여로 확인</span></div>
+        <div class="table-wrap missing-grid">
+          <table>
+            <thead><tr><th>이름</th><th>이메일</th></tr></thead>
+            <tbody id="missing-preview">
+              <tr><td colspan="2" class="empty">참여자 정보 파일을 선택하세요.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="footnote" id="compare-source">대조 기준: 생성된 data02</p>
+        <div class="download-list">
+          <button class="button primary" id="download-emails" disabled>이름 &lt;이메일&gt; CSV 다운로드</button>
+          <button class="button" id="download-email-txt" disabled>이름 &lt;이메일&gt; TXT 다운로드</button>
+          <button class="button" id="download-missing-xlsx" disabled>미참여자 명단 Excel 다운로드</button>
+        </div>
+        <p class="footnote">이름을 공백·기호 없이 비교합니다. 동명이인이나 표기 차이가 있을 수 있으니 발송 전에 명단을 확인하세요.</p>
+      </aside>
+    </section>
+  </main>
+
+  <div class="viewer" id="sns-viewer" hidden aria-hidden="true">
+    <button class="viewer-backdrop" id="viewer-backdrop" type="button" aria-label="미리보기 닫기"></button>
+    <section class="viewer-panel" role="dialog" aria-modal="true" aria-labelledby="viewer-title">
+      <header class="viewer-header">
+        <div class="viewer-title" id="viewer-title">SNS URL</div>
+        <div class="viewer-actions">
+          <a class="viewer-open-link" id="viewer-open-link" href="#" target="_blank" rel="noopener noreferrer">새 탭에서 열기</a>
+          <button class="button viewer-close" id="viewer-close" type="button" aria-label="레이어 닫기">×</button>
+        </div>
+      </header>
+      <p class="viewer-note">사이트 설정에 따라 iframe 미리보기가 차단될 수 있습니다. 표시되지 않으면 새 탭에서 열어 주세요.</p>
+      <iframe class="viewer-frame" id="viewer-frame" title="SNS 콘텐츠" referrerpolicy="no-referrer" allow="fullscreen"></iframe>
+    </section>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const DATA02_HEADERS = ["No.", "이름", "차수", "갤캠스 URL", "업로드 채널", "SNS URL", "우수 콘텐츠", "인게이지먼트", "비고", "특이사항"];
+      const state = { lowRows: null, infoRows: null, existingRows: null, dataRows: [], missingRows: [], warnings: 0, activeRowIndex: null };
+      const $ = (id) => document.getElementById(id);
+      let previousFocus = null;
+
+      function closeViewer() {
+        const viewer = $("sns-viewer");
+        if (viewer.hidden) return;
+        viewer.hidden = true;
+        viewer.setAttribute("aria-hidden", "true");
+        $("viewer-frame").src = "about:blank";
+        document.body.classList.remove("viewer-open");
+        if (previousFocus instanceof HTMLElement) previousFocus.focus();
+      }
+
+      function getEmbedUrl(url) {
+        const embedUrl = new URL(url);
+        const hostname = embedUrl.hostname.toLocaleLowerCase("en-US");
+        if ((hostname === "instagram.com" || hostname.endsWith(".instagram.com")) && /^\/(p|reel|tv)\/[^/]+\/?$/i.test(embedUrl.pathname)) {
+          embedUrl.pathname = `${embedUrl.pathname.replace(/\/+$/, "")}/embed/`;
+          embedUrl.search = "";
+          embedUrl.hash = "";
+        } else if ((hostname === "youtu.be" || hostname.endsWith(".youtu.be")) && embedUrl.pathname.split("/").filter(Boolean)[0]) {
+          const videoId = embedUrl.pathname.split("/").filter(Boolean)[0];
+          return `https://www.youtube.com/embed/${encodeURIComponent(videoId)}`;
+        } else if ((hostname === "youtube.com" || hostname.endsWith(".youtube.com")) && embedUrl.pathname === "/watch" && embedUrl.searchParams.has("v")) {
+          return `https://www.youtube.com/embed/${encodeURIComponent(embedUrl.searchParams.get("v"))}`;
+        } else if ((hostname === "youtube.com" || hostname.endsWith(".youtube.com")) && /^\/(shorts|live)\/[^/]+\/?$/i.test(embedUrl.pathname)) {
+          const videoId = embedUrl.pathname.split("/")[2];
+          return `https://www.youtube.com/embed/${encodeURIComponent(videoId)}`;
+        }
+        return embedUrl.href;
+      }
+
+      function openViewer(url, trigger, rowIndex) {
+        let parsedUrl;
+        try {
+          parsedUrl = new URL(url);
+        } catch {
+          showMessage("올바른 SNS URL이 아니어서 미리보기를 열 수 없습니다.", true);
+          return;
+        }
+        if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
+          showMessage("HTTP 또는 HTTPS 주소만 미리보기로 열 수 있습니다.", true);
+          return;
+        }
+        const tbody = $("preview");
+        tbody.querySelector("tr.is-active")?.classList.remove("is-active");
+        tbody.querySelector("tr[aria-selected='true']")?.setAttribute("aria-selected", "false");
+        const activeRow = trigger.closest("tr");
+        activeRow.classList.add("is-active");
+        activeRow.setAttribute("aria-selected", "true");
+        state.activeRowIndex = rowIndex;
+        previousFocus = trigger;
+        $("viewer-title").textContent = url;
+        $("viewer-open-link").href = parsedUrl.href;
+        $("viewer-frame").src = getEmbedUrl(parsedUrl.href);
+        const viewer = $("sns-viewer");
+        viewer.hidden = false;
+        viewer.setAttribute("aria-hidden", "false");
+        document.body.classList.add("viewer-open");
+        $("viewer-close").focus();
+      }
+
+      function showMessage(text, error = false) {
+        const box = $("message");
+        box.textContent = text;
+        box.className = `alert show${error ? " error" : ""}`;
+      }
+
+      function hideMessage() {
+        $("message").className = "alert";
+        $("message").textContent = "";
+      }
+
+      function findHeader(headers, candidates) {
+        const normalized = (value) => String(value || "").trim().replace(/\s+/g, "").toLowerCase();
+        for (const candidate of candidates) {
+          const exact = headers.find((header) => normalized(header) === normalized(candidate));
+          if (exact) return exact;
+        }
+        for (const candidate of candidates) {
+          const partial = headers.find((header) => normalized(header).includes(normalized(candidate)));
+          if (partial) return partial;
+        }
+        return null;
+      }
+
+      function decodeCsv(buffer) {
+        const bytes = new Uint8Array(buffer);
+        if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+          return new TextDecoder("utf-8").decode(bytes);
+        }
+        try {
+          return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+        } catch {
+          try {
+            return new TextDecoder("euc-kr").decode(bytes);
+          } catch {
+            throw new Error("CSV 인코딩을 읽지 못했습니다. UTF-8 또는 EUC-KR 형식으로 저장해 주세요.");
+          }
+        }
+      }
+
+      function readParticipantRows(workbook) {
+        const matches = [];
+        for (const sheetName of workbook.SheetNames) {
+          const matrix = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: "", raw: false });
+          for (let index = 0; index < matrix.length; index += 1) {
+            const headers = matrix[index].map((value) => String(value).trim());
+            const nameKey = findHeader(headers, ["성함", "이름", "성명"]);
+            const emailKey = findHeader(headers, ["이메일 주소", "이메일", "메일", "email", "e-mail"]);
+            if (!nameKey || !emailKey || nameKey === emailKey) continue;
+            const nameIndex = headers.indexOf(nameKey);
+            const emailIndex = headers.indexOf(emailKey);
+            const rows = matrix.slice(index + 1)
+              .map((row) => ({
+                "성함": String(row[nameIndex] || "").trim(),
+                "이메일 주소": String(row[emailIndex] || "").trim()
+              }))
+              .filter((row) => row["성함"] && row["성함"] !== nameKey);
+            if (rows.length) matches.push({ sheetName, rows });
+            break;
+          }
+        }
+        if (!matches.length) {
+          throw new Error("참여자 정보에서 이름·이메일 제목 행과 데이터 행을 찾지 못했습니다. 성함/이름/성명과 이메일 주소 열을 확인해 주세요.");
+        }
+        if (matches.length > 1) {
+          throw new Error(`참여자 정보가 있는 시트가 여러 개입니다 (${matches.map((match) => match.sheetName).join(", ")}). 대조할 시트만 별도 파일로 저장해 업로드해 주세요.`);
+        }
+        return matches[0].rows;
+      }
+
+      async function readRows(file, kind) {
+        if (!window.XLSX) throw new Error("엑셀 처리 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인하고 페이지를 새로고침해 주세요.");
+        const buffer = await file.arrayBuffer();
+        const isCsv = /\.csv$/i.test(file.name);
+        const workbook = isCsv
+          ? XLSX.read(decodeCsv(buffer), { type: "string", raw: false })
+          : XLSX.read(buffer, { type: "array", raw: false });
+        if (kind === "info") return readParticipantRows(workbook);
+        const sheetName = workbook.SheetNames[0];
+        if (!sheetName) throw new Error("파일에 읽을 수 있는 시트가 없습니다.");
+        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "", raw: false });
+        if (!rows.length) throw new Error("파일에 데이터 행이 없습니다.");
+        return rows;
+      }
+
+      function normalizeName(value) {
+        return String(value || "").normalize("NFKC").toLocaleLowerCase("ko-KR").replace(/[\s\p{P}\p{S}]/gu, "");
+      }
+
+      function extractUrls(value) {
+        const matches = String(value || "").match(/https?:\/\/[^\s<>"'`]+/giu) || [];
+        return matches.map((url) => url.replace(/[)\],.;!?]+$/u, "")).filter(Boolean);
+      }
+
+      function normalizeUploadChannel(value, url) {
+        try {
+          const hostname = new URL(url).hostname.toLocaleLowerCase("en-US");
+          if (hostname === "instagram.com" || hostname.endsWith(".instagram.com") || hostname === "instagr.am" || hostname.endsWith(".instagr.am")) return "IG";
+          if (hostname === "youtube.com" || hostname.endsWith(".youtube.com") || hostname === "youtu.be" || hostname.endsWith(".youtu.be") || hostname === "youtube-nocookie.com" || hostname.endsWith(".youtube-nocookie.com")) return "YT";
+        } catch {
+          // Fall back to the submitted channel when the URL has no valid hostname.
+        }
+        const channel = String(value || "").normalize("NFKC").replace(/[\s_-]+/gu, "").toLocaleLowerCase("ko-KR");
+        if (channel.includes("인스타그램") || channel.includes("instagram")) return "IG";
+        if (channel.includes("유튜브") || channel.includes("youtube")) return "YT";
+        if (channel.includes("네이버블로그") || channel.includes("naverblog") || channel === "블로그" || channel === "blog") return "BLOG";
+        return "ETC";
+      }
+
+      function findLowColumns(headers) {
+        const name = findHeader(headers, ["이름을 입력해주세요", "이름"]);
+        const campusUrl = findHeader(headers, ["갤럭시 캠퍼스 콘텐츠 URL", "갤캠스 URL"]);
+        if (!name || !campusUrl) {
+          throw new Error("로우데이터에서 이름 또는 갤럭시 캠퍼스 URL 열을 찾지 못했습니다.");
+        }
+        const pairs = [
+          [findHeader(headers, ["업로드 채널(*)"]), findHeader(headers, ["콘텐츠 URL(*)"])],
+          [findHeader(headers, ["업로드 채널2"]), findHeader(headers, ["콘텐츠2 URL"])],
+          [findHeader(headers, ["업로드 채널3"]), findHeader(headers, ["콘텐츠3 URL"])],
+          [findHeader(headers, ["추가 업로드 채널"]), findHeader(headers, ["추가 콘텐츠 업로드 시 하단에 업로드 채널과 URL"])]
+        ].filter(([channel, url]) => channel || url);
+        return { name, campusUrl, pairs };
+      }
+
+      function createDataRows(rows) {
+        const headers = Object.keys(rows[0] || {});
+        const columns = findLowColumns(headers);
+        const round = $("round-input").value.trim();
+        const generated = [];
+        let warnings = 0;
+        for (const source of rows) {
+          const name = String(source[columns.name] || "").trim();
+          if (!name) continue;
+          for (const [channelKey, urlKey] of columns.pairs) {
+            const channel = channelKey ? String(source[channelKey] || "").trim() : "";
+            const urlText = urlKey ? String(source[urlKey] || "").trim() : "";
+            if (!channel && !urlText) continue;
+            if (!channel || !urlText) {
+              warnings += 1;
+              continue;
+            }
+            const urls = extractUrls(urlText);
+            if (!urls.length) {
+              warnings += 1;
+              continue;
+            }
+            for (const url of urls) {
+              generated.push({
+                "No.": generated.length + 1,
+                "이름": name,
+                "차수": round,
+                "갤캠스 URL": String(source[columns.campusUrl] || "").trim(),
+                "업로드 채널": normalizeUploadChannel(channel, url),
+                "SNS URL": url,
+                "우수 콘텐츠": "",
+                "인게이지먼트": "",
+                "비고": "",
+                "특이사항": ""
+              });
+            }
+          }
+        }
+        return { generated, warnings };
+      }
+
+      function readExistingNames(rows) {
+        const headers = Object.keys(rows[0] || {});
+        const nameKey = findHeader(headers, ["이름", "성함"]);
+        if (!nameKey) throw new Error("기존 data02 파일에서 이름 열을 찾지 못했습니다.");
+        return rows.map((row) => String(row[nameKey] || "").trim()).filter(Boolean);
+      }
+
+      function updateComparison() {
+        if (!state.infoRows) {
+          state.missingRows = [];
+          renderMissing();
+          return;
+        }
+        const infoHeaders = Object.keys(state.infoRows[0] || {});
+        const nameKey = findHeader(infoHeaders, ["성함", "이름"]);
+        const emailKey = findHeader(infoHeaders, ["이메일 주소", "이메일", "메일"]);
+        if (!nameKey || !emailKey) {
+          showMessage("참여자 정보 파일에서 이름 또는 이메일 주소 열을 찾지 못했습니다.", true);
+          state.missingRows = [];
+          renderMissing();
+          return;
+        }
+        let doneNames;
+        if (state.existingRows) {
+          try {
+            doneNames = readExistingNames(state.existingRows);
+            $("compare-source").textContent = "대조 기준: 업로드한 기존 data02";
+          } catch (error) {
+            showMessage(error.message, true);
+            state.missingRows = [];
+            renderMissing();
+            return;
+          }
+        } else {
+          doneNames = state.dataRows.map((row) => row["이름"]);
+          $("compare-source").textContent = "대조 기준: 생성된 data02";
+        }
+        const doneSet = new Set(doneNames.map(normalizeName).filter(Boolean));
+        state.missingRows = state.infoRows
+          .map((row) => ({ "이름": String(row[nameKey] || "").trim(), "이메일 주소": String(row[emailKey] || "").trim() }))
+          .filter((row) => row["이름"] && !doneSet.has(normalizeName(row["이름"])));
+        renderMissing();
+      }
+
+      function renderData() {
+        const tbody = $("preview");
+        $("row-count").textContent = String(state.dataRows.length);
+        $("source-count").textContent = state.lowRows ? String(state.lowRows.length) : "—";
+        $("warning-count").textContent = state.lowRows ? String(state.warnings) : "—";
+        $("download-xlsx").disabled = !state.dataRows.length;
+        $("download-csv").disabled = !state.dataRows.length;
+        if (!state.dataRows.length) {
+          state.activeRowIndex = null;
+          tbody.innerHTML = '<tr><td colspan="10" class="empty">추출할 콘텐츠 URL이 없습니다.</td></tr>';
+          return;
+        }
+        tbody.replaceChildren();
+        for (const [rowIndex, row] of state.dataRows.entries()) {
+          const tr = document.createElement("tr");
+          const snsUrl = String(row["SNS URL"] || "");
+          if (snsUrl) {
+            tr.dataset.snsUrl = snsUrl;
+            tr.tabIndex = 0;
+            tr.setAttribute("aria-label", `${row["이름"]} SNS 링크 열기`);
+            tr.addEventListener("click", (event) => {
+              if (event.target.closest("a")) return;
+              openViewer(snsUrl, tr, rowIndex);
+            });
+            tr.addEventListener("keydown", (event) => {
+              if (event.target !== tr || (event.key !== "Enter" && event.key !== " ")) return;
+              event.preventDefault();
+              openViewer(snsUrl, tr, rowIndex);
+            });
+          }
+          if (rowIndex === state.activeRowIndex) {
+            tr.classList.add("is-active");
+            tr.setAttribute("aria-selected", "true");
+          }
+          DATA02_HEADERS.forEach((header) => {
+            const td = document.createElement("td");
+            const value = String(row[header] || "");
+            if ((header === "갤캠스 URL" || header === "SNS URL") && /^https?:\/\//i.test(value)) {
+              const link = document.createElement("a");
+              link.href = value;
+              link.target = "_blank";
+              link.rel = "noopener noreferrer";
+              link.textContent = value;
+              link.title = value;
+              if (header === "SNS URL") {
+                link.addEventListener("click", (event) => {
+                  event.preventDefault();
+                  openViewer(value, link, rowIndex);
+                });
+              }
+              td.className = "url";
+              td.append(link);
+            } else {
+              td.textContent = value;
+            }
+            tr.append(td);
+          });
+          tbody.append(tr);
+        }
+      }
+
+      function renderMissing() {
+        const tbody = $("missing-preview");
+        const available = Boolean(state.infoRows);
+        $("missing-count").textContent = available ? String(state.missingRows.length) : "—";
+        const hasEmails = state.missingRows.some((row) => row["이메일 주소"]);
+        $("download-emails").disabled = !hasEmails;
+        $("download-email-txt").disabled = !hasEmails;
+        $("download-missing-xlsx").disabled = !state.missingRows.length;
+        if (!available) {
+          tbody.innerHTML = '<tr><td colspan="2" class="empty">참여자 정보 파일을 선택하세요.</td></tr>';
+          return;
+        }
+        if (!state.missingRows.length) {
+          tbody.innerHTML = '<tr><td colspan="2" class="empty">모든 이름이 data02에서 확인되었습니다.</td></tr>';
+          return;
+        }
+        tbody.replaceChildren();
+        for (const row of state.missingRows) {
+          const tr = document.createElement("tr");
+          for (const key of ["이름", "이메일 주소"]) {
+            const td = document.createElement("td");
+            td.textContent = row[key] || "이메일 없음";
+            tr.append(td);
+          }
+          tbody.append(tr);
+        }
+      }
+
+      function getMissingEmails() {
+        const seen = new Set();
+        return state.missingRows
+          .map((row) => ({
+            name: row["이름"].trim(),
+            email: row["이메일 주소"].trim()
+          }))
+          .filter(({ email }) => {
+            const key = email.toLocaleLowerCase("ko-KR");
+            if (!email || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+      }
+
+      function formatEmailListCsv(entries) {
+        const quote = (value) => `"${String(value).replace(/"/g, '""')}"`;
+        return "\ufeff" + entries.map(({ name, email }) => quote(`${name} <${email}>`)).join("\r\n");
+      }
+
+      function downloadBlob(filename, blob) {
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      }
+
+      function toCsv(rows, headers) {
+        const quote = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+        const lines = [headers.map(quote).join(","), ...rows.map((row) => headers.map((header) => quote(row[header])).join(","))];
+        return "\ufeff" + lines.join("\r\n");
+      }
+
+      function downloadWorkbook(filename, sheetName, rows, headers) {
+        const sheet = XLSX.utils.json_to_sheet(rows, { header: headers, skipHeader: false });
+        sheet["!cols"] = headers.map((header) => ({ wch: Math.min(32, Math.max(12, header.length * 2 + 3)) }));
+        sheet["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length, c: headers.length - 1 } }) };
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
+        XLSX.writeFile(workbook, filename);
+      }
+
+      async function handleFile(inputId, nameId, kind) {
+        const file = $(inputId).files[0];
+        if (!file) return;
+        hideMessage();
+        $(nameId).textContent = file.name;
+        try {
+          const rows = await readRows(file, kind);
+          if (kind === "low") {
+            state.lowRows = rows;
+            state.activeRowIndex = null;
+            const result = createDataRows(rows);
+            state.dataRows = result.generated;
+            state.warnings = result.warnings;
+            renderData();
+            if (state.warnings) showMessage(`채널과 URL이 모두 입력되지 않은 항목 ${state.warnings}건은 결과에서 제외했습니다. 원본 응답을 확인해 주세요.`);
+          } else if (kind === "info") {
+            state.infoRows = rows;
+            $(nameId).textContent = `${file.name} · 참여자 ${rows.length}명`;
+          } else {
+            state.existingRows = rows;
+          }
+          updateComparison();
+        } catch (error) {
+          if (kind === "info") {
+            state.infoRows = null;
+            state.missingRows = [];
+            renderMissing();
+          }
+          showMessage(error instanceof Error ? error.message : "파일을 처리하지 못했습니다.", true);
+        }
+      }
+
+      $("low-file").addEventListener("change", () => handleFile("low-file", "low-name", "low"));
+      $("info-file").addEventListener("change", () => handleFile("info-file", "info-name", "info"));
+      $("data-file").addEventListener("change", () => handleFile("data-file", "data-name", "data"));
+      $("viewer-close").addEventListener("click", closeViewer);
+      $("viewer-backdrop").addEventListener("click", closeViewer);
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") closeViewer();
+      });
+      $("round-input").addEventListener("input", () => {
+        if (!state.lowRows) return;
+        const result = createDataRows(state.lowRows);
+        state.dataRows = result.generated;
+        state.warnings = result.warnings;
+        renderData();
+        updateComparison();
+      });
+      $("download-xlsx").addEventListener("click", () => downloadWorkbook("data02.xlsx", "data02", state.dataRows, DATA02_HEADERS));
+      $("download-csv").addEventListener("click", () => downloadBlob("data02.csv", new Blob([toCsv(state.dataRows, DATA02_HEADERS)], { type: "text/csv;charset=utf-8" })));
+      $("download-emails").addEventListener("click", () => {
+        downloadBlob("미참여자_이메일.csv", new Blob([formatEmailListCsv(getMissingEmails())], { type: "text/csv;charset=utf-8" }));
+      });
+      $("download-email-txt").addEventListener("click", () => {
+        const lines = getMissingEmails().map(({ name, email }) => `${name} <${email}>`);
+        downloadBlob("미참여자_이메일.txt", new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/plain;charset=utf-8" }));
+      });
+      $("download-missing-xlsx").addEventListener("click", () => downloadWorkbook("미참여자_명단.xlsx", "미참여자", state.missingRows, ["이름", "이메일 주소"]));
+
+      if (!window.XLSX) showMessage("엑셀/CSV 처리 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 페이지를 새로고침해 주세요.", true);
+    })();
+  </script>
+</body>
+</html>
